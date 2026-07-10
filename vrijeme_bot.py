@@ -360,26 +360,119 @@ def sastavi_i_posalji_aqi():
 
 
 # ============================================================
-#  POKRETANJE - biraj komandu kad rucno pokrecses skriptu
+#  PREPOZNAVANJE PRAVIH TELEGRAM NAREDBI (npr. poslane s telefona)
 # ============================================================
-# python vrijeme_bot.py       -> puni vremenski izvjestaj (isto kao /vr)
-# python vrijeme_bot.py vr    -> puni vremenski izvjestaj
-# python vrijeme_bot.py aqi   -> kvaliteta zraka (trenutno + sljedeci sat)
-# (radi i s kosom crtom: "/vr", "/aqi")
+
+# Ako u Telegram chat posaljes bilo koju od ovih rijeci/naredbi (s ili bez kose crte,
+# malim ili velikim slovima), bot ce ti ODMAH odgovoriti odgovarajucim izvjestajem.
+KOMANDA_AKCIJE = {
+    "vr": sastavi_i_posalji_izvjestaj,
+    "vrijeme": sastavi_i_posalji_izvjestaj,
+    "prognoza": sastavi_i_posalji_izvjestaj,
+    "aqi": sastavi_i_posalji_aqi,
+    "zrak": sastavi_i_posalji_aqi,
+}
+
+DATOTEKA_ZADNJI_UPDATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zadnji_update_id.txt")
+
+
+def ucitaj_zadnji_update_id():
+    """Procitaj koji je ID zadnje Telegram poruke koju smo vec obradili (da ne obradjujemo istu dvaput)."""
+    if not os.path.exists(DATOTEKA_ZADNJI_UPDATE):
+        return 0
+    try:
+        with open(DATOTEKA_ZADNJI_UPDATE, "r", encoding="utf-8") as f:
+            return int(f.read().strip() or 0)
+    except (ValueError, OSError):
+        return 0
+
+
+def spremi_zadnji_update_id(update_id):
+    with open(DATOTEKA_ZADNJI_UPDATE, "w", encoding="utf-8") as f:
+        f.write(str(update_id))
+
+
+def provjeri_i_obradi_komande():
+    """
+    Provjeri ima li novih poruka poslanih botu u Telegramu (npr. s telefona).
+    Ako je netko poslao prepoznatu naredbu (npr. "/vr" ili "/aqi"), odmah posalji
+    odgovarajuci izvjestaj. Ovo se poziva periodicki (npr. svakih 5 min preko
+    GitHub Actions), NE ceka se beskonacno na jednom mjestu.
+    """
+    zadnji_id = ucitaj_zadnji_update_id()
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+    try:
+        odgovor = requests.get(url, params={"offset": zadnji_id + 1, "timeout": 0}, timeout=20)
+        odgovor.raise_for_status()
+        podaci = odgovor.json()
+    except Exception as e:
+        print("Ne mogu provjeriti Telegram poruke:", e)
+        return
+
+    if not podaci.get("ok"):
+        print("Telegram getUpdates nije uspio:", podaci)
+        return
+
+    updates = podaci.get("result", [])
+    if not updates:
+        print("Nema novih poruka.")
+        return
+
+    najveci_id = zadnji_id
+    naredba_pronadjena = False
+
+    for update in updates:
+        najveci_id = max(najveci_id, update.get("update_id", najveci_id))
+
+        poruka = update.get("message", {})
+        chat_id_poruke = str(poruka.get("chat", {}).get("id", ""))
+        tekst = (poruka.get("text") or "").strip().lower()
+        tekst = tekst.split("@")[0]        # ukloni "@ImeBota" ako postoji (grupni chatovi)
+        tekst = tekst.lstrip("/")          # ukloni kosu crtu da "/vr" i "vr" budu isto
+
+        if chat_id_poruke != str(TELEGRAM_CHAT_ID):
+            continue  # ignoriraj poruke od bilo koga drugog osim tebe
+
+        akcija = KOMANDA_AKCIJE.get(tekst)
+        if akcija:
+            print(f"Prepoznata naredba: '{tekst}' - saljem odgovarajuci izvjestaj.")
+            akcija()
+            naredba_pronadjena = True
+
+    spremi_zadnji_update_id(najveci_id)
+
+    if not naredba_pronadjena:
+        print("Bilo je novih poruka, ali nijedna nije prepoznata naredba.")
+
+
+# ============================================================
+#  POKRETANJE
+# ============================================================
+# LOKALNO na racunalu (bez GitHub Actions), REZIM nije postavljen, pa se koristi
+# argument iz Command Prompta (kao prije):
+#     python vrijeme_bot.py vr    -> puni vremenski izvjestaj
+#     python vrijeme_bot.py aqi   -> kvaliteta zraka
+#
+# PREKO GitHub Actions (REZIM=provjeri_komande), skripta provjerava jesi li s
+# TELEFONA poslao "/vr" ili "/aqi" u Telegram chat, i ako jesi, odmah odgovara.
 
 def glavna_funkcija():
     if "STAVI_SVOJ" in TELEGRAM_TOKEN or "STAVI_SVOJ" in TELEGRAM_CHAT_ID:
         print("GRESKA: Prvo moras upisati TELEGRAM_TOKEN i TELEGRAM_CHAT_ID na vrhu skripte!")
         return
 
+    rezim = os.environ.get("REZIM", "lokalno")
+
+    if rezim == "provjeri_komande":
+        provjeri_i_obradi_komande()
+        return
+
     komanda = "vr"
     if len(sys.argv) > 1:
         komanda = sys.argv[1].strip().lower().lstrip("/")
 
-    if komanda == "aqi":
-        sastavi_i_posalji_aqi()
-    else:
-        sastavi_i_posalji_izvjestaj()
+    akcija = KOMANDA_AKCIJE.get(komanda, sastavi_i_posalji_izvjestaj)
+    akcija()
 
 
 if __name__ == "__main__":
