@@ -45,8 +45,8 @@ except ImportError:
 #  PODESI OVO PRIJE PRVOG POKRETANJA
 # ============================================================
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "8833366110:AAGcDj6fGWyovdamHzSZifTgMVEtLMWVRBg")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "898656875")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 # Napomena: ako pokrecses ovo preko GitHub Actions, TELEGRAM_TOKEN i TELEGRAM_CHAT_ID
 # se citaju iz GitHub Secrets (sigurno, nikad vidljivo u kodu). Ako pokrecses lokalno na
 # svom racunalu, mozes gornje redove slobodno zamijeniti direktnim upisom u navodnicima.
