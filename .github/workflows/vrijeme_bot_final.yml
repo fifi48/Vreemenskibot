@@ -1,1 +1,53 @@
+# Ova datoteka govori GitHubu KADA i KAKO pokrenuti vrijeme_bot.py
+# Mjesto gdje ova datoteka mora ziti u repozitoriju: .github/workflows/vrijeme_bot.yml
+#
+# OVAJ WORKFLOW RADI SAMO JEDNO:
+#   Svakih 5 minuta provjeri jesi li u Telegram chatu (npr. s telefona) poslao
+#   naredbu "/vr" (vremenski izvjestaj) ili "/aqi" (kvaliteta zraka), i ako jesi,
+#   ODMAH ti posalje odgovarajuci izvjestaj.
+#
+# Nema automatskog jutarnjeg izvjestaja - samo izvjestaj NA ZAHTJEV, na tvoju naredbu.
 
+name: Vrijeme Bot - naredbe
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # svakih 5 min - provjeri jesi li poslao /vr ili /aqi u chat
+  workflow_dispatch:        # omogucuje i RUCNO pokretanje (dugme "Run workflow" na GitHubu)
+
+concurrency:
+  group: vrijeme-bot-naredbe
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # potrebno da workflow moze spremiti zadnji obradjeni ID poruke natrag u repo
+
+jobs:
+  provjeri-naredbe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preuzmi kod iz repozitorija
+        uses: actions/checkout@v4
+
+      - name: Postavi Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instaliraj potrebne pakete
+        run: python -m pip install --upgrade pip requests ephem tzdata
+
+      - name: Provjeri Telegram naredbe i odgovori ako treba
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REZIM: provjeri_komande
+        run: python vrijeme_bot.py
+
+      - name: Spremi zadnji obradjeni Telegram update natrag u repozitorij
+        run: |
+          git config user.name "vrijeme-bot"
+          git config user.email "vrijeme-bot@users.noreply.github.com"
+          git add zadnji_update_id.txt
+          git diff --cached --quiet || git commit -m "Azuriraj zadnji obradjeni Telegram update"
+          git push
